@@ -2,8 +2,17 @@ package main
 
 import (
 	"fmt"
+	"os"
 )
 
 func main() {
-	fmt.Println("Quick hack from Go")
+	args := os.Args
+
+	if len(args) <= 1  {
+		return
+	}
+
+	for _, entry := range args[1:] {
+		fmt.Printf("Processing: %s\n", entry)
+	}
 }
