@@ -1,3 +1,3 @@
 function quack() {
-    echo "Quick hack"
+    ./quick-hack
 }
