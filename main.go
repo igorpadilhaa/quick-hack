@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -12,7 +13,10 @@ func main() {
 		return
 	}
 
-	for _, entry := range args[1:] {
-		fmt.Printf("Processing: %s\n", entry)
-	}
+	script := "export PATH=${PATH}"
+        
+        separator := string(os.PathListSeparator)
+        script += separator + strings.Join(args[1:], separator)
+
+        fmt.Println(script)
 }

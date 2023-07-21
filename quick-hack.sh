@@ -1,3 +1,3 @@
 function quack() {
-    ./quick-hack ${@}
+    eval $(./quick-hack ${@})
 }
