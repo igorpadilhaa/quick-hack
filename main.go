@@ -38,6 +38,28 @@ func loadPaths(apps []string) []string {
     return paths
 }
 
+func IsConfigValid() bool {
+    valid := true
+
+    for appName, appPath := range KnownApps {
+        pathInfo, err := os.Stat(appPath)
+
+        if err != nil {
+            valid = false
+            
+            fmt.Fprintf(os.Stderr, "Error on app '%s' (%s): %s\n", appName, appPath, err)
+            continue;
+        }
+        
+        if !pathInfo.IsDir() {
+            valid = false
+            fmt.Fprintf(os.Stderr, "Erro on app '%s': path must be a directory, got %s\n", appName, appPath)
+        }
+    }
+
+    return valid
+}
+
 func main() {
 	args := os.Args
 
@@ -56,12 +78,17 @@ func main() {
 	script := "export PATH=${PATH}"
         var newEntries []string
 
-        if args[1] == "add" {
+        switch args[1] {
+        case "check":
+            IsConfigValid()
+            return;
+
+        case "add":
             newEntries = loadPaths(args[2:])
-        } else {
+
+        default:
             newEntries = args[1:]
         }
-
         separator := string(os.PathListSeparator)
         script += separator + strings.Join(newEntries, separator)
 
