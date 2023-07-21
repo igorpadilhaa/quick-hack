@@ -1,14 +1,24 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 )
 
-var KnownApps = map[string]string {
-    "java": "path/to/jdk",
-    "node": "path/to/node",
+var KnownApps map[string]string
+
+func parseAppList(listJson []byte) map[string]string {
+    var appList map[string]string
+
+    err := json.Unmarshal(listJson, &appList)
+
+    if err != nil {
+        fmt.Fprintf(os.Stderr,"Failed to parse app list: %s\n", err)
+    }
+
+    return appList
 }
 
 func loadPaths(apps []string) []string {
@@ -34,6 +44,14 @@ func main() {
 	if len(args) <= 1  {
 		return
 	}
+
+        appListJson, err := os.ReadFile("./apps.json")
+
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
+        } else {
+            KnownApps = parseAppList(appListJson)
+        }
 
 	script := "export PATH=${PATH}"
         var newEntries []string
