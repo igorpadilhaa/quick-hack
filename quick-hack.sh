@@ -1,3 +1,5 @@
 function quack() {
-    eval $(./quick-hack ${@})
+    HACK_HOME=${HACK_HOME:-$(pwd)}
+
+    eval $($HACK_HOME/quick-hack ${@})
 }
