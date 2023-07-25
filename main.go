@@ -36,16 +36,23 @@ func parseAppList(listJson []byte) map[string]string {
 
 func resolvePath(path string) (string, error) {
     rootPath, err := os.Executable()
+    rootPath = filepath.Dir(rootPath)   
 
     if err != nil {
         return "", err
     }
     
-    if filepath.IsLocal(path) {
+    rootPath, err = filepath.Abs(rootPath)
+
+    if err != nil {
+        return "", err
+    }
+
+    if !filepath.IsAbs(path) {
         path = filepath.Join(rootPath, path)
     }
 
-    path, err = filepath.Abs(path)
+    fmt.Fprintln(os.Stderr, path)
     return path, err
 }
 
@@ -102,7 +109,7 @@ func addToPath(entries []string) {
 }
 
 func readConfigFiles() {
-	appListJson, err := os.ReadFile("./apps.json")
+        appListJson, err := os.ReadFile("./apps.json")
 
 	if err != nil {
             if !errors.Is(err, os.ErrNotExist) {
