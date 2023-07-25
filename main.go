@@ -60,13 +60,16 @@ func IsConfigValid() bool {
 	return valid
 }
 
-func main() {
-	args := os.Args
+func addToPath(entries []string) {
+	script := "export PATH=${PATH}"
 
-	if len(args) <= 1 {
-		return
-	}
+        separator := string(os.PathListSeparator)
+	script += separator + strings.Join(entries, separator)
 
+	fmt.Println(script)
+}
+
+func readConfigFiles() {
 	appListJson, err := os.ReadFile("./apps.json")
 
 	if err != nil {
@@ -74,9 +77,16 @@ func main() {
 	} else {
 		KnownApps = parseAppList(appListJson)
 	}
+}
 
-	script := "export PATH=${PATH}"
-	var newEntries []string
+func main() {
+	args := os.Args
+
+	if len(args) <= 1 {
+		return
+	}
+
+        readConfigFiles()
 
 	switch args[1] {
 	case "check":
@@ -84,14 +94,10 @@ func main() {
 		return
 
 	case "add":
-		newEntries = loadPaths(args[2:])
+		addToPath(loadPaths(args[2:]))
 
 	default:
-		newEntries = args[1:]
+		addToPath(args[1:])
 	}
     
-	separator := string(os.PathListSeparator)
-	script += separator + strings.Join(newEntries, separator)
-
-	fmt.Println(script)
 }
