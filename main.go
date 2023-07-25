@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,10 +105,14 @@ func readConfigFiles() {
 	appListJson, err := os.ReadFile("./apps.json")
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
-	} else {
-		KnownApps = parseAppList(appListJson)
+            if !errors.Is(err, os.ErrNotExist) {
+	    	fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
+            }
+
+            return
 	}
+	
+        KnownApps = parseAppList(appListJson)
 }
 
 
