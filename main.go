@@ -109,7 +109,13 @@ func addToPath(entries []string) {
 }
 
 func readConfigFiles() {
-        appListJson, err := os.ReadFile("./apps.json")
+        appsConfigPath, err := resolvePath("./apps.json")
+
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "Failed to resolve apps configuration path: %s", err)
+        }
+
+        appListJson, err := os.ReadFile(appsConfigPath)
 
 	if err != nil {
             if !errors.Is(err, os.ErrNotExist) {
