@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,7 +19,33 @@ func parseAppList(listJson []byte) map[string]string {
 		fmt.Fprintf(os.Stderr, "Failed to parse app list: %s\n", err)
 	}
 
+        for appName, appPath := range appList {
+            appPath, err := resolvePath(appPath)
+
+            if err != nil {
+                delete(appList, appName)
+                fmt.Fprintf(os.Stderr, "Error: failed to resolve path from app '%s'\n", appName)
+            }
+
+            appList[appName] = appPath
+        }
+
 	return appList
+}
+
+func resolvePath(path string) (string, error) {
+    rootPath, err := os.Executable()
+
+    if err != nil {
+        return "", err
+    }
+    
+    if filepath.IsLocal(path) {
+        path = filepath.Join(rootPath, path)
+    }
+
+    path, err = filepath.Abs(path)
+    return path, err
 }
 
 func loadPaths(apps []string) []string {
@@ -61,7 +88,11 @@ func IsConfigValid() bool {
 }
 
 func addToPath(entries []string) {
-	script := "export PATH=${PATH}"
+        if len(entries) == 0 {
+            return
+        }
+
+        script := "export PATH=${PATH}"
 
         separator := string(os.PathListSeparator)
 	script += separator + strings.Join(entries, separator)
@@ -78,6 +109,7 @@ func readConfigFiles() {
 		KnownApps = parseAppList(appListJson)
 	}
 }
+
 
 func main() {
 	args := os.Args
