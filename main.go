@@ -52,7 +52,6 @@ func resolvePath(path string) (string, error) {
         path = filepath.Join(rootPath, path)
     }
 
-    fmt.Fprintln(os.Stderr, path)
     return path, err
 }
 
