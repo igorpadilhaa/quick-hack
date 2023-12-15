@@ -37,6 +37,39 @@ func (ap *AppOrPath) ToApp() App {
 	return ap.App
 }
 
+func currentEnvPath() PathSet {
+	pathSet := PathSet{}
+	path, envExist := os.LookupEnv("PATH")
+
+	if !envExist {
+		return pathSet
+	}
+
+	pathSeparator := string(os.PathListSeparator)
+	pathEntries := strings.Split(path, pathSeparator)
+
+	pathSet.AddAll(pathEntries)
+	return pathSet
+}
+
+type PathSet map[string]interface{}
+
+func (set PathSet) AddAll(paths []string) {
+	for _, path := range paths {
+		set[path] = nil
+	}
+}
+
+func (set PathSet) Entries() []string {
+	var entries []string
+
+	for entry := range set {
+		entries = append(entries, entry)
+	}
+
+	return entries
+}
+
 func parseAppList(listJson []byte) (AppCatalog, error) {
 	var appList map[string]AppOrPath
 	err := json.Unmarshal(listJson, &appList)
@@ -121,6 +154,9 @@ func checkConfig(appCatalog AppCatalog) {
 }
 
 func addToPath(entries []string) {
+	newPath := currentEnvPath()
+	newPath.AddAll(entries)
+
 	if len(entries) == 0 {
 		return
 	}
@@ -128,7 +164,7 @@ func addToPath(entries []string) {
 	script := "export PATH=${PATH}"
 
 	separator := string(os.PathListSeparator)
-	script += separator + strings.Join(entries, separator)
+	script += separator + strings.Join(newPath.Entries(), separator)
 
 	fmt.Println(script)
 }
