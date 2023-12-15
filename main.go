@@ -12,9 +12,43 @@ import (
 
 type App struct {
 	Path string
+	Uses []string
 }
 
 type AppCatalog map[string]App
+
+func (catalog AppCatalog) ResolveDependencies(appName string) ([]App, error) {
+	alreadyAdded := map[string]bool{}
+	return catalog.resolveDependenciesBut(appName, alreadyAdded)
+}
+
+func (catalog AppCatalog) resolveDependenciesBut(appName string, exclude map[string]bool) ([]App, error) {
+	var deps []App
+	var app App
+	app, exists := catalog[appName]
+
+	if !exists {
+		return nil, fmt.Errorf("unknown app %q", appName)
+	}
+
+	if exclude[appName] {
+		return deps, nil
+	}
+
+	deps = append(deps, app)
+	exclude[appName] = true
+
+	for _, dependencyName := range app.Uses {
+		transitiveDeps, err := catalog.resolveDependenciesBut(dependencyName, exclude)
+		if err != nil {
+			return nil, fmt.Errorf("in transitive dependency %q: %w", dependencyName, err)
+		}
+
+		deps = append(deps, transitiveDeps...)
+	}
+
+	return deps, nil
+}
 
 type AppOrPath struct {
 	App
@@ -126,12 +160,14 @@ func loadPaths(registeredApps AppCatalog, appNames []string) ([]string, error) {
 	var paths []string
 
 	for _, appName := range appNames {
-		app, exists := registeredApps[appName]
-		if !exists {
-			return nil, fmt.Errorf("unknown app %q", appName)
+		apps, err := registeredApps.ResolveDependencies(appName)
+		if err != nil {
+			return nil, err
 		}
 
-		paths = append(paths, app.Path)
+		for _, app := range apps {
+			paths = append(paths, app.Path)
+		}
 	}
 
 	return paths, nil
@@ -161,10 +197,8 @@ func addToPath(entries []string) {
 		return
 	}
 
-	script := "export PATH=${PATH}"
-
 	separator := string(os.PathListSeparator)
-	script += separator + strings.Join(newPath.Entries(), separator)
+	script := "export PATH=" + strings.Join(newPath.Entries(), separator)
 
 	fmt.Println(script)
 }
