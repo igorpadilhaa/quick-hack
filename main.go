@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,13 +12,13 @@ import (
 
 type AppCatalog map[string]string
 
-func parseAppList(listJson []byte) map[string]string {
-	var appList map[string]string
+func parseAppList(listJson []byte) (AppCatalog, error) {
+	var appList AppCatalog
 
 	err := json.Unmarshal(listJson, &appList)
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse app list: %s\n", err)
+		return nil, fmt.Errorf("failed to parse app list: %s", err)
 	}
 
 	for appName, appPath := range appList {
@@ -31,7 +32,7 @@ func parseAppList(listJson []byte) map[string]string {
 		appList[appName] = appPath
 	}
 
-	return appList
+	return appList, nil
 }
 
 func resolvePath(path string) (string, error) {
@@ -55,43 +56,35 @@ func resolvePath(path string) (string, error) {
 	return path, err
 }
 
-func loadPaths(registeredApps AppCatalog, appNames []string) []string {
+func loadPaths(registeredApps AppCatalog, appNames []string) ([]string, error) {
 	var paths []string
 
 	for _, appName := range appNames {
 		appPath, exists := registeredApps[appName]
-
 		if !exists {
-			fmt.Fprintf(os.Stderr, "Unknown app '%s'\n", appName)
-			continue
+			return nil, fmt.Errorf("unknown app %q", appName)
 		}
 
 		paths = append(paths, appPath)
 	}
 
-	return paths
+	return paths, nil
 }
 
-func IsConfigValid(appCatalog AppCatalog) bool {
-	valid := true
-
+func checkConfig(appCatalog AppCatalog) {
 	for appName, appPath := range appCatalog {
 		pathInfo, err := os.Stat(appPath)
 
-		if err != nil {
-			valid = false
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("WARN: path to app %q does not exist (%s)", appName, appPath)
 
-			fmt.Fprintf(os.Stderr, "Error on app '%s' (%s): %s\n", appName, appPath, err)
-			continue
-		}
+		} else if err != nil {
+			log.Printf("ERROR: %s", err)
 
-		if !pathInfo.IsDir() {
-			valid = false
-			fmt.Fprintf(os.Stderr, "Erro on app '%s': path must be a directory, got %s\n", appName, appPath)
+		} else if !pathInfo.IsDir() {
+			log.Printf("WARN: path to app %q must point to a directory (%s)", appName, appPath)
 		}
 	}
-
-	return valid
 }
 
 func addToPath(entries []string) {
@@ -120,7 +113,7 @@ func readConfigFiles() (AppCatalog, error) {
 		return nil, fmt.Errorf("failed to read app list: %w", err)
 	}
 
-	return parseAppList(appListJson), nil
+	return parseAppList(appListJson)
 }
 
 func main() {
@@ -137,11 +130,16 @@ func main() {
 
 	switch args[1] {
 	case "check":
-		IsConfigValid(apps)
+		checkConfig(apps)
 		return
 
 	case "add":
-		addToPath(loadPaths(apps, args[2:]))
+		appPaths, err := loadPaths(apps, args[2:])
+		if err != nil {
+			log.Fatalf("ERROR: failed complete operation: %s", err)
+		}
+
+		addToPath(appPaths)
 
 	default:
 		addToPath(args[1:])
