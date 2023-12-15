@@ -20,39 +20,39 @@ func parseAppList(listJson []byte) map[string]string {
 		fmt.Fprintf(os.Stderr, "Failed to parse app list: %s\n", err)
 	}
 
-        for appName, appPath := range appList {
-            appPath, err := resolvePath(appPath)
+	for appName, appPath := range appList {
+		appPath, err := resolvePath(appPath)
 
-            if err != nil {
-                delete(appList, appName)
-                fmt.Fprintf(os.Stderr, "Error: failed to resolve path from app '%s'\n", appName)
-            }
+		if err != nil {
+			delete(appList, appName)
+			fmt.Fprintf(os.Stderr, "Error: failed to resolve path from app '%s'\n", appName)
+		}
 
-            appList[appName] = appPath
-        }
+		appList[appName] = appPath
+	}
 
 	return appList
 }
 
 func resolvePath(path string) (string, error) {
-    rootPath, err := os.Executable()
-    rootPath = filepath.Dir(rootPath)   
+	rootPath, err := os.Executable()
+	rootPath = filepath.Dir(rootPath)
 
-    if err != nil {
-        return "", err
-    }
-    
-    rootPath, err = filepath.Abs(rootPath)
+	if err != nil {
+		return "", err
+	}
 
-    if err != nil {
-        return "", err
-    }
+	rootPath, err = filepath.Abs(rootPath)
 
-    if !filepath.IsAbs(path) {
-        path = filepath.Join(rootPath, path)
-    }
+	if err != nil {
+		return "", err
+	}
 
-    return path, err
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(rootPath, path)
+	}
+
+	return path, err
 }
 
 func loadPaths(apps []string) []string {
@@ -95,38 +95,37 @@ func IsConfigValid() bool {
 }
 
 func addToPath(entries []string) {
-        if len(entries) == 0 {
-            return
-        }
+	if len(entries) == 0 {
+		return
+	}
 
-        script := "export PATH=${PATH}"
+	script := "export PATH=${PATH}"
 
-        separator := string(os.PathListSeparator)
+	separator := string(os.PathListSeparator)
 	script += separator + strings.Join(entries, separator)
 
 	fmt.Println(script)
 }
 
 func readConfigFiles() {
-        appsConfigPath, err := resolvePath("./apps.json")
-
-        if err != nil {
-            fmt.Fprintf(os.Stderr, "Failed to resolve apps configuration path: %s", err)
-        }
-
-        appListJson, err := os.ReadFile(appsConfigPath)
+	appsConfigPath, err := resolvePath("./apps.json")
 
 	if err != nil {
-            if !errors.Is(err, os.ErrNotExist) {
-	    	fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
-            }
-
-            return
+		fmt.Fprintf(os.Stderr, "Failed to resolve apps configuration path: %s", err)
 	}
-	
-        KnownApps = parseAppList(appListJson)
-}
 
+	appListJson, err := os.ReadFile(appsConfigPath)
+
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
+		}
+
+		return
+	}
+
+	KnownApps = parseAppList(appListJson)
+}
 
 func main() {
 	args := os.Args
@@ -135,7 +134,7 @@ func main() {
 		return
 	}
 
-        readConfigFiles()
+	readConfigFiles()
 
 	switch args[1] {
 	case "check":
@@ -148,5 +147,5 @@ func main() {
 	default:
 		addToPath(args[1:])
 	}
-    
+
 }
