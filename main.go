@@ -2,14 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-var KnownApps map[string]string
+type AppCatalog map[string]string
 
 func parseAppList(listJson []byte) map[string]string {
 	var appList map[string]string
@@ -55,11 +55,11 @@ func resolvePath(path string) (string, error) {
 	return path, err
 }
 
-func loadPaths(apps []string) []string {
+func loadPaths(registeredApps AppCatalog, appNames []string) []string {
 	var paths []string
 
-	for _, appName := range apps {
-		appPath, exists := KnownApps[appName]
+	for _, appName := range appNames {
+		appPath, exists := registeredApps[appName]
 
 		if !exists {
 			fmt.Fprintf(os.Stderr, "Unknown app '%s'\n", appName)
@@ -72,10 +72,10 @@ func loadPaths(apps []string) []string {
 	return paths
 }
 
-func IsConfigValid() bool {
+func IsConfigValid(appCatalog AppCatalog) bool {
 	valid := true
 
-	for appName, appPath := range KnownApps {
+	for appName, appPath := range appCatalog {
 		pathInfo, err := os.Stat(appPath)
 
 		if err != nil {
@@ -107,24 +107,20 @@ func addToPath(entries []string) {
 	fmt.Println(script)
 }
 
-func readConfigFiles() {
+func readConfigFiles() (AppCatalog, error) {
 	appsConfigPath, err := resolvePath("./apps.json")
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve apps configuration path: %s", err)
+		return nil, fmt.Errorf("failed to resolve apps configuration path: %w", err)
 	}
 
 	appListJson, err := os.ReadFile(appsConfigPath)
 
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			fmt.Fprintf(os.Stderr, "Failed to read app list: %s\n", err)
-		}
-
-		return
+		return nil, fmt.Errorf("failed to read app list: %w", err)
 	}
 
-	KnownApps = parseAppList(appListJson)
+	return parseAppList(appListJson), nil
 }
 
 func main() {
@@ -133,16 +129,19 @@ func main() {
 	if len(args) <= 1 {
 		return
 	}
-
-	readConfigFiles()
+	
+	apps, err := readConfigFiles()
+	if err != nil {
+		log.Fatalf("ERROR: %s", err)
+	}
 
 	switch args[1] {
 	case "check":
-		IsConfigValid()
+		IsConfigValid(apps)
 		return
 
 	case "add":
-		addToPath(loadPaths(args[2:]))
+		addToPath(loadPaths(apps, args[2:]))
 
 	default:
 		addToPath(args[1:])
