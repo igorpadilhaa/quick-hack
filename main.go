@@ -10,29 +10,62 @@ import (
 	"strings"
 )
 
-type AppCatalog map[string]string
+type App struct {
+	Path string
+}
+
+type AppCatalog map[string]App
+
+type AppOrPath struct {
+	App
+	string
+}
+
+func (ap *AppOrPath) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &ap.App); err == nil {
+		return nil
+	}
+
+	return json.Unmarshal(data, &ap.string)
+}
+
+func (ap *AppOrPath) ToApp() App {
+	if ap.string != "" {
+		ap.Path = ap.string
+	}
+
+	return ap.App
+}
 
 func parseAppList(listJson []byte) (AppCatalog, error) {
-	var appList AppCatalog
-
+	var appList map[string]AppOrPath
 	err := json.Unmarshal(listJson, &appList)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse app list: %s", err)
 	}
 
-	for appName, appPath := range appList {
-		appPath, err := resolvePath(appPath)
-
-		if err != nil {
-			delete(appList, appName)
-			fmt.Fprintf(os.Stderr, "Error: failed to resolve path from app '%s'\n", appName)
-		}
-
-		appList[appName] = appPath
+	appCatalog := AppCatalog{}
+	for appName, appOrPath := range appList {
+		appCatalog[appName] = appOrPath.ToApp()
 	}
 
-	return appList, nil
+	cleanPaths(appCatalog)
+	return appCatalog, nil
+}
+
+func cleanPaths(apps AppCatalog) {
+	for appName, app := range apps {
+		resolvedPath, err := resolvePath(app.Path)
+		if err != nil {
+			delete(apps, appName)
+			log.Printf("ERROR: failed to resolve path from app '%s'\n", appName)
+		}
+
+		app.Path = resolvedPath
+		apps[appName] = app
+	}
+
 }
 
 func resolvePath(path string) (string, error) {
@@ -60,29 +93,29 @@ func loadPaths(registeredApps AppCatalog, appNames []string) ([]string, error) {
 	var paths []string
 
 	for _, appName := range appNames {
-		appPath, exists := registeredApps[appName]
+		app, exists := registeredApps[appName]
 		if !exists {
 			return nil, fmt.Errorf("unknown app %q", appName)
 		}
 
-		paths = append(paths, appPath)
+		paths = append(paths, app.Path)
 	}
 
 	return paths, nil
 }
 
 func checkConfig(appCatalog AppCatalog) {
-	for appName, appPath := range appCatalog {
-		pathInfo, err := os.Stat(appPath)
+	for appName, app := range appCatalog {
+		pathInfo, err := os.Stat(app.Path)
 
 		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("WARN: path to app %q does not exist (%s)", appName, appPath)
+			log.Printf("WARN: path to app %q does not exist (%s)", appName, app.Path)
 
 		} else if err != nil {
 			log.Printf("ERROR: %s", err)
 
 		} else if !pathInfo.IsDir() {
-			log.Printf("WARN: path to app %q must point to a directory (%s)", appName, appPath)
+			log.Printf("WARN: path to app %q must point to a directory (%s)", appName, app.Path)
 		}
 	}
 }
@@ -122,7 +155,7 @@ func main() {
 	if len(args) <= 1 {
 		return
 	}
-	
+
 	apps, err := readConfigFiles()
 	if err != nil {
 		log.Fatalf("ERROR: %s", err)
