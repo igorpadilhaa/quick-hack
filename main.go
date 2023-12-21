@@ -13,6 +13,7 @@ import (
 type App struct {
 	Path string
 	Uses []string
+	Sets map[string]string
 }
 
 type AppCatalog map[string]App
@@ -22,7 +23,7 @@ type Script struct {
 }
 
 func (script *Script) Set(variable string, value string) {
-	script.content += fmt.Sprintf("export %s=%s", variable, value)
+	script.content += fmt.Sprintf("export %s=%s\n", variable, value)
 }
 
 func main() {
@@ -32,7 +33,7 @@ func main() {
 		return
 	}
 
-	apps, err := readConfigFiles()
+	appCatalog, err := readConfigFiles()
 	if err != nil {
 		log.Fatalf("ERROR: %s", err)
 	}
@@ -41,16 +42,16 @@ func main() {
 
 	switch args[1] {
 	case "check":
-		checkConfig(apps)
+		checkConfig(appCatalog)
 		return
 
 	case "add":
-		appPaths, err := loadPaths(apps, args[2:])
+		apps, err := getApps(appCatalog, args[2:])
 		if err != nil {
 			log.Fatalf("ERROR: failed complete operation: %s", err)
 		}
 
-		addToPath(&script, appPaths)
+		setupApps(&script, apps)
 
 	default:
 		addToPath(&script, args[1:])
@@ -94,6 +95,20 @@ func (catalog AppCatalog) resolveDependenciesBut(appName string, exclude map[str
 	return deps, nil
 }
 
+func setupApps(script *Script, apps []App) {
+	paths := PathSet{}
+
+	for _, app := range apps {
+		paths.Add(app.Path)
+
+		for varName, value := range app.Sets {
+			script.Set(varName, value)
+		}
+	}
+
+	addToPath(script, paths.Entries())
+}
+
 type AppOrPath struct {
 	App
 	string
@@ -132,9 +147,13 @@ func currentEnvPath() PathSet {
 
 type PathSet map[string]interface{}
 
+func (set PathSet) Add(path string) {
+	set[path] = nil
+}
+
 func (set PathSet) AddAll(paths []string) {
 	for _, path := range paths {
-		set[path] = nil
+		set.Add(path)
 	}
 }
 
@@ -200,21 +219,18 @@ func resolvePath(path string) (string, error) {
 	return path, err
 }
 
-func loadPaths(registeredApps AppCatalog, appNames []string) ([]string, error) {
-	var paths []string
+func getApps(registeredApps AppCatalog, appNames []string) ([]App, error) {
+	var apps []App
 
 	for _, appName := range appNames {
-		apps, err := registeredApps.ResolveDependencies(appName)
+		deps, err := registeredApps.ResolveDependencies(appName)
 		if err != nil {
 			return nil, err
 		}
-
-		for _, app := range apps {
-			paths = append(paths, app.Path)
-		}
+		apps = append(apps, deps...)
 	}
 
-	return paths, nil
+	return apps, nil
 }
 
 func checkConfig(appCatalog AppCatalog) {

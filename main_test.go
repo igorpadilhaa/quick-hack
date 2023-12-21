@@ -49,10 +49,10 @@ func TestDependencyResolve(t *testing.T) {
 	}
 
 	catalog := AppCatalog{
-		"java":     App{"/path/java", nil},
-		"gradle":   App{"/path/gradle", []string{"java"}},
-		"php":      App{"/path/php", []string{"composer"}},
-		"composer": App{"/path/composer", []string{"php"}},
+		"java":     App{"/path/java", nil, nil},
+		"gradle":   App{"/path/gradle", []string{"java"}, nil},
+		"php":      App{"/path/php", []string{"composer"}, nil},
+		"composer": App{"/path/composer", []string{"php"}, nil},
 	}
 
 	for _, testCase := range testTable {
