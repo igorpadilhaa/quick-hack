@@ -17,6 +17,14 @@ type App struct {
 
 type AppCatalog map[string]App
 
+type Script struct {
+	content string
+}
+
+func (script *Script) Set(variable string, value string) {
+	script.content += fmt.Sprintf("export %s=%s", variable, value)
+}
+
 func main() {
 	args := os.Args
 
@@ -29,6 +37,8 @@ func main() {
 		log.Fatalf("ERROR: %s", err)
 	}
 
+	script := Script{}
+
 	switch args[1] {
 	case "check":
 		checkConfig(apps)
@@ -40,12 +50,15 @@ func main() {
 			log.Fatalf("ERROR: failed complete operation: %s", err)
 		}
 
-		addToPath(appPaths)
+		addToPath(&script, appPaths)
 
 	default:
-		addToPath(args[1:])
+		addToPath(&script, args[1:])
 	}
 
+	if len(script.content) != 0 {
+		fmt.Println(script.content)
+	}
 }
 
 func (catalog AppCatalog) ResolveDependencies(appName string) ([]App, error) {
@@ -220,7 +233,7 @@ func checkConfig(appCatalog AppCatalog) {
 	}
 }
 
-func addToPath(entries []string) {
+func addToPath(script *Script, entries []string) {
 	newPath := currentEnvPath()
 	newPath.AddAll(entries)
 
@@ -229,9 +242,9 @@ func addToPath(entries []string) {
 	}
 
 	separator := string(os.PathListSeparator)
-	script := "export PATH=" + strings.Join(newPath.Entries(), separator)
+	path := strings.Join(newPath.Entries(), separator)
 
-	fmt.Println(script)
+	script.Set("PATH", path)
 }
 
 func readConfigFiles() (AppCatalog, error) {
