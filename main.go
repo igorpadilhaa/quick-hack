@@ -17,6 +17,37 @@ type App struct {
 
 type AppCatalog map[string]App
 
+func main() {
+	args := os.Args
+
+	if len(args) <= 1 {
+		return
+	}
+
+	apps, err := readConfigFiles()
+	if err != nil {
+		log.Fatalf("ERROR: %s", err)
+	}
+
+	switch args[1] {
+	case "check":
+		checkConfig(apps)
+		return
+
+	case "add":
+		appPaths, err := loadPaths(apps, args[2:])
+		if err != nil {
+			log.Fatalf("ERROR: failed complete operation: %s", err)
+		}
+
+		addToPath(appPaths)
+
+	default:
+		addToPath(args[1:])
+	}
+
+}
+
 func (catalog AppCatalog) ResolveDependencies(appName string) ([]App, error) {
 	alreadyAdded := map[string]bool{}
 	return catalog.resolveDependenciesBut(appName, alreadyAdded)
@@ -217,35 +248,4 @@ func readConfigFiles() (AppCatalog, error) {
 	}
 
 	return parseAppList(appListJson)
-}
-
-func main() {
-	args := os.Args
-
-	if len(args) <= 1 {
-		return
-	}
-
-	apps, err := readConfigFiles()
-	if err != nil {
-		log.Fatalf("ERROR: %s", err)
-	}
-
-	switch args[1] {
-	case "check":
-		checkConfig(apps)
-		return
-
-	case "add":
-		appPaths, err := loadPaths(apps, args[2:])
-		if err != nil {
-			log.Fatalf("ERROR: failed complete operation: %s", err)
-		}
-
-		addToPath(appPaths)
-
-	default:
-		addToPath(args[1:])
-	}
-
 }
