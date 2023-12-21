@@ -99,14 +99,28 @@ func setupApps(script *Script, apps []App) {
 	paths := PathSet{}
 
 	for _, app := range apps {
+		customVars := map[string]string{
+			"HQPATH": app.Path,
+		}
 		paths.Add(app.Path)
 
 		for varName, value := range app.Sets {
+			value = os.Expand(value, extendVarFunc(customVars))
 			script.Set(varName, value)
 		}
 	}
 
 	addToPath(script, paths.Entries())
+}
+
+func extendVarFunc(variables map[string]string) func(string)string {
+	return func(varname string) string {
+		value, exists := variables[varname]
+		if !exists {
+			return varname
+		}
+		return value
+	}
 }
 
 type AppOrPath struct {
