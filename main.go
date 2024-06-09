@@ -1,173 +1,20 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/igorpadilhaa/quick-hack/config"
 )
-
-type App struct {
-	Path string
-	Uses []string
-	Sets map[string]string
-}
-
-type AppCatalog map[string]App
-
-type Script struct {
-	content string
-}
-
-func (script *Script) Set(variable string, value string) {
-	script.content += fmt.Sprintf("export %s=%s\n", variable, value)
-}
-
-func main() {
-	args := os.Args
-
-	if len(args) <= 1 {
-		return
-	}
-
-	appCatalog, err := readConfigFiles()
-	if err != nil {
-		log.Fatalf("ERROR: %s", err)
-	}
-
-	script := Script{}
-
-	switch args[1] {
-	case "check":
-		checkConfig(appCatalog)
-		return
-
-	case "add":
-		apps, err := getApps(appCatalog, args[2:])
-		if err != nil {
-			log.Fatalf("ERROR: failed complete operation: %s", err)
-		}
-
-		setupApps(&script, apps)
-
-	default:
-		addToPath(&script, args[1:])
-	}
-
-	if len(script.content) != 0 {
-		fmt.Println(script.content)
-	}
-}
-
-func (catalog AppCatalog) ResolveDependencies(appName string) ([]App, error) {
-	alreadyAdded := map[string]bool{}
-	return catalog.resolveDependenciesBut(appName, alreadyAdded)
-}
-
-func (catalog AppCatalog) resolveDependenciesBut(appName string, exclude map[string]bool) ([]App, error) {
-	var deps []App
-	var app App
-	app, exists := catalog[appName]
-
-	if !exists {
-		return nil, fmt.Errorf("unknown app %q", appName)
-	}
-
-	if exclude[appName] {
-		return deps, nil
-	}
-
-	deps = append(deps, app)
-	exclude[appName] = true
-
-	for _, dependencyName := range app.Uses {
-		transitiveDeps, err := catalog.resolveDependenciesBut(dependencyName, exclude)
-		if err != nil {
-			return nil, fmt.Errorf("in transitive dependency %q: %w", dependencyName, err)
-		}
-
-		deps = append(deps, transitiveDeps...)
-	}
-
-	return deps, nil
-}
-
-func setupApps(script *Script, apps []App) {
-	paths := PathSet{}
-
-	for _, app := range apps {
-		customVars := map[string]string{
-			"HQPATH": app.Path,
-		}
-		paths.Add(app.Path)
-
-		for varName, value := range app.Sets {
-			value = os.Expand(value, extendVarFunc(customVars))
-			script.Set(varName, value)
-		}
-	}
-
-	addToPath(script, paths.Entries())
-}
-
-func extendVarFunc(variables map[string]string) func(string)string {
-	return func(varname string) string {
-		value, exists := variables[varname]
-		if !exists {
-			return varname
-		}
-		return value
-	}
-}
-
-type AppOrPath struct {
-	App
-	string
-}
-
-func (ap *AppOrPath) UnmarshalJSON(data []byte) error {
-	if err := json.Unmarshal(data, &ap.App); err == nil {
-		return nil
-	}
-
-	return json.Unmarshal(data, &ap.string)
-}
-
-func (ap *AppOrPath) ToApp() App {
-	if ap.string != "" {
-		ap.Path = ap.string
-	}
-
-	return ap.App
-}
-
-func currentEnvPath() PathSet {
-	pathSet := PathSet{}
-	path, envExist := os.LookupEnv("PATH")
-
-	if !envExist {
-		return pathSet
-	}
-
-	pathSeparator := string(os.PathListSeparator)
-	pathEntries := strings.Split(path, pathSeparator)
-
-	pathSet.AddAll(pathEntries)
-	return pathSet
-}
 
 type PathSet map[string]interface{}
 
-func (set PathSet) Add(path string) {
-	set[path] = nil
-}
-
-func (set PathSet) AddAll(paths []string) {
+func (set PathSet) Add(paths ...string) {
 	for _, path := range paths {
-		set.Add(path)
+		set[path] = nil
 	}
 }
 
@@ -181,35 +28,142 @@ func (set PathSet) Entries() []string {
 	return entries
 }
 
-func parseAppList(listJson []byte) (AppCatalog, error) {
-	var appList map[string]AppOrPath
-	err := json.Unmarshal(listJson, &appList)
+func currentEnvPath() PathSet {
+	pathSet := PathSet{}
+	path, envExist := os.LookupEnv("PATH")
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse app list: %s", err)
+	if !envExist {
+		return pathSet
 	}
 
-	appCatalog := AppCatalog{}
-	for appName, appOrPath := range appList {
-		appCatalog[appName] = appOrPath.ToApp()
-	}
+	pathSeparator := string(os.PathListSeparator)
+	pathEntries := strings.Split(path, pathSeparator)
 
-	cleanPaths(appCatalog)
-	return appCatalog, nil
+	pathSet.Add(pathEntries...)
+	return pathSet
 }
 
-func cleanPaths(apps AppCatalog) {
-	for appName, app := range apps {
-		resolvedPath, err := resolvePath(app.Path)
-		if err != nil {
-			delete(apps, appName)
-			log.Printf("ERROR: failed to resolve path from app '%s'\n", appName)
-		}
+type Script struct {
+	newPath PathSet
+	vars    map[string]string
+}
 
-		app.Path = resolvedPath
-		apps[appName] = app
+func NewScript() Script {
+	return Script{
+		PathSet{},
+		map[string]string{},
+	}
+}
+
+func (script *Script) Set(variable string, value string) {
+	script.vars[variable] = value
+}
+
+func (script *Script) AddToPath(entry string) {
+	script.newPath.Add(entry)
+}
+
+func (script *Script) HasChanges() bool {
+	return len(script.newPath.Entries()) != 0 || len(script.vars) != 0
+}
+
+func (script *Script) ToString() string {
+	path := currentEnvPath()
+	path.Add(script.newPath.Entries()...)
+
+	separator := string(os.PathListSeparator)
+	pathVal := strings.Join(path.Entries(), separator)
+
+	script.Set("PATH", pathVal)
+
+	var generated strings.Builder
+	for varname, value := range script.vars {
+		generated.WriteString(fmt.Sprintf("export %s=%s\n", varname, value))
+	}
+	return generated.String()
+}
+
+func main() {
+	args := os.Args
+	if len(args) <= 1 {
+		return
 	}
 
+	config, err := readConfiguration()
+	if err != nil {
+		log.Fatalf("ERROR: %s", err)
+	}
+
+	script := NewScript()
+
+	switch args[1] {
+	case "check":
+		errs := config.Check()
+		if len(errs) != 0 {
+			for _, err := range errs {
+				log.Println("ERROR: ", err)
+			}
+		}
+
+	case "add":
+		apps, err := config.Apps.AllRequired(args[2])
+		if err != nil {
+			log.Fatalf("ERROR: failed to complete operation: %s", err)
+		}
+		if err := setupApps(config, &script, apps); err != nil {
+			log.Fatalf("ERROR: failed to complete operation: %s", err)
+		}
+	}
+
+	if script.HasChanges() {
+		fmt.Println(script.ToString())
+	}
+}
+
+func readConfiguration() (*config.QHConfig, error) {
+	appsConfigPath, err := resolvePath("./apps.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve apps configuration path: %w", err)
+	}
+
+	configStr, err := os.ReadFile(appsConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read app list: %w", err)
+	}
+
+	conf, err := config.FromJSON(configStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var rootPath string
+	if !conf.HasRoot() {
+		rootPath = "."
+	} else {
+		rootPath = conf.GetRoot()
+	}
+
+	rootPath, err = resolvePath(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	conf.SetRoot(rootPath)
+
+	return conf, err
+}
+
+func setupApps(config *config.QHConfig, script *Script, apps []config.AppSetup) error {
+	for _, app := range apps {
+		appPath := config.ExpandWithin(app.Path, app)
+		appPath = config.Resolve(appPath)
+
+		script.AddToPath(appPath)
+
+		for varName, value := range app.Sets {
+			script.Set(varName, config.ExpandWithin(value, app))
+		}
+	}
+	return nil
 }
 
 func resolvePath(path string) (string, error) {
@@ -219,7 +173,6 @@ func resolvePath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	rootPath, err = filepath.Abs(rootPath)
 
 	if err != nil {
@@ -231,64 +184,4 @@ func resolvePath(path string) (string, error) {
 	}
 
 	return path, err
-}
-
-func getApps(registeredApps AppCatalog, appNames []string) ([]App, error) {
-	var apps []App
-
-	for _, appName := range appNames {
-		deps, err := registeredApps.ResolveDependencies(appName)
-		if err != nil {
-			return nil, err
-		}
-		apps = append(apps, deps...)
-	}
-
-	return apps, nil
-}
-
-func checkConfig(appCatalog AppCatalog) {
-	for appName, app := range appCatalog {
-		pathInfo, err := os.Stat(app.Path)
-
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("WARN: path to app %q does not exist (%s)", appName, app.Path)
-
-		} else if err != nil {
-			log.Printf("ERROR: %s", err)
-
-		} else if !pathInfo.IsDir() {
-			log.Printf("WARN: path to app %q must point to a directory (%s)", appName, app.Path)
-		}
-	}
-}
-
-func addToPath(script *Script, entries []string) {
-	newPath := currentEnvPath()
-	newPath.AddAll(entries)
-
-	if len(entries) == 0 {
-		return
-	}
-
-	separator := string(os.PathListSeparator)
-	path := strings.Join(newPath.Entries(), separator)
-
-	script.Set("PATH", path)
-}
-
-func readConfigFiles() (AppCatalog, error) {
-	appsConfigPath, err := resolvePath("./apps.json")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve apps configuration path: %w", err)
-	}
-
-	appListJson, err := os.ReadFile(appsConfigPath)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to read app list: %w", err)
-	}
-
-	return parseAppList(appListJson)
 }
