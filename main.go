@@ -238,5 +238,5 @@ func installPackage(conf *config.QHConfig, packageName string) error {
 		return fmt.Errorf("the app %q has no package configured", app.Name)
 	}
 
-	return pack.Install(app.Package, app.Path)
+	return pack.Install(app.Package, conf.ExpandWithin(app.Path, app))
 }
