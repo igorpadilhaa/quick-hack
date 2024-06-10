@@ -9,6 +9,7 @@ type AppSetup struct {
 	Path string
 	Uses []string
 	Sets map[string]string
+	Package string
 }
 
 func (catalog AppCatalog) Add(app AppSetup) {

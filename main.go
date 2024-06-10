@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/igorpadilhaa/quick-hack/config"
+	"github.com/igorpadilhaa/quick-hack/pack"
 )
 
 type PathSet map[string]interface{}
@@ -44,14 +45,16 @@ func currentEnvPath() PathSet {
 }
 
 type Script struct {
-	newPath PathSet
-	vars    map[string]string
+	newPath  PathSet
+	vars     map[string]string
+	messages []string
 }
 
 func NewScript() Script {
 	return Script{
 		PathSet{},
 		map[string]string{},
+		[]string{},
 	}
 }
 
@@ -63,22 +66,32 @@ func (script *Script) AddToPath(entry string) {
 	script.newPath.Add(entry)
 }
 
-func (script *Script) HasChanges() bool {
-	return len(script.newPath.Entries()) != 0 || len(script.vars) != 0
+func (script *Script) Echo(message ...string) {
+	script.messages = append(script.messages, strings.Join(message, " "))
 }
 
-func (script *Script) ToString() string {
-	path := currentEnvPath()
-	path.Add(script.newPath.Entries()...)
+func (script *Script) HasChanges() bool {
+	return len(script.newPath.Entries()) != 0 || len(script.vars) != 0 || len(script.messages) != 0
+}
 
-	separator := string(os.PathListSeparator)
-	pathVal := strings.Join(path.Entries(), separator)
+func (script Script) String() string {
+	if len(script.newPath) != 0 {
+		path := currentEnvPath()
+		path.Add(script.newPath.Entries()...)
 
-	script.Set("PATH", pathVal)
+		separator := string(os.PathListSeparator)
+		pathVal := strings.Join(path.Entries(), separator)
+
+		script.Set("PATH", pathVal)
+	}
 
 	var generated strings.Builder
 	for varname, value := range script.vars {
-		generated.WriteString(fmt.Sprintf("export %s=%s\n", varname, value))
+		generated.WriteString(fmt.Sprintf("export %s=%q;\n", varname, value))
+	}
+
+	for _, message := range script.messages {
+		generated.WriteString(fmt.Sprintf("echo %q;\n", message))
 	}
 	return generated.String()
 }
@@ -101,7 +114,7 @@ func main() {
 		errs := config.Check()
 		if len(errs) != 0 {
 			for _, err := range errs {
-				log.Println("ERROR: ", err)
+				log.Println("WARN:", err)
 			}
 		}
 
@@ -113,10 +126,20 @@ func main() {
 		if err := setupApps(config, &script, apps); err != nil {
 			log.Fatalf("ERROR: failed to complete operation: %s", err)
 		}
+
+	case "packages":
+		listPackages(config, &script)
+
+	case "install":
+		if err := installPackage(config, args[2]); err != nil {
+			script.Echo("ERROR:", err.Error())
+		} else {
+			script.Echo(args[2], "installed")
+		}
 	}
 
 	if script.HasChanges() {
-		fmt.Println(script.ToString())
+		fmt.Print(script)
 	}
 }
 
@@ -184,4 +207,36 @@ func resolvePath(path string) (string, error) {
 	}
 
 	return path, err
+}
+
+func listPackages(conf *config.QHConfig, script *Script) {
+	packageNames := conf.Packages()
+	if len(packageNames) == 0 {
+		script.Echo("no configured packages")
+		return
+	}
+
+	script.Echo("Packages:")
+	for _, name := range packageNames {
+		status := ""
+		installed, err := conf.IsInstalled(name)
+		if err == nil && installed {
+			status = "[Installed]"
+		}
+
+		script.Echo("-", name, status)
+	}
+}
+
+func installPackage(conf *config.QHConfig, packageName string) error {
+	app, found := conf.Apps.Get(packageName)
+	if !found {
+		return fmt.Errorf("unknown package %q", packageName)
+	}
+
+	if app.Package == "" {
+		return fmt.Errorf("the app %q has no package configured", app.Name)
+	}
+
+	return pack.Install(app.Package, app.Path)
 }

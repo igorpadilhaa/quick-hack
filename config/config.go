@@ -74,3 +74,30 @@ func (config *QHConfig) ExpandWithin(text string, app AppSetup) string {
 
 	return os.Expand(text, mapFunc)
 }
+
+func (config *QHConfig) Packages() []string {
+	var packages []string
+
+	for _, app := range config.Apps {
+		if app.Package != "" {
+			packages = append(packages, app.Name)
+		}
+	}
+	return packages
+}
+
+func (config *QHConfig) IsInstalled(appName string) (bool, error) {
+	app, found := config.Apps.Get(appName)
+	if !found {
+		return false, fmt.Errorf("app %q not found", appName)
+	}
+
+	_, err := os.Stat(app.Path)
+	if err == nil {
+		return true, nil		
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("failed to check package status: %w", err)
+	}
+}
