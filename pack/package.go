@@ -110,7 +110,7 @@ func UnpackTar(outputDir string, reader io.Reader) error {
 		dstFilePath := filepath.Join(outputDir, header.Name)
 
 		if header.FileInfo().IsDir() {
-			if err := os.MkdirAll(dstFilePath, os.ModePerm); err != nil {
+			if err := os.MkdirAll(dstFilePath, header.FileInfo().Mode()); err != nil {
 				return err
 			}
 			continue
@@ -132,6 +132,7 @@ func UnpackTar(outputDir string, reader io.Reader) error {
 		if err != nil {
 			return err
 		}
+		os.Chmod(dstFilePath, header.FileInfo().Mode())
 	}
 	return removeIntermediateDir(outputDir)
 }
