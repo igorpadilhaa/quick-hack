@@ -9,14 +9,20 @@ import (
 
 type QHConfig struct {
 	Vars map[string]string
-	Apps AppCatalog
+	apps AppCatalog
 }
 
 func (config *QHConfig) Check() []error {
 	var errorList []error
 
-	for appName, app := range config.Apps {
-		pathInfo, err := os.Stat(config.Resolve(app.Path))
+	for appName := range config.apps {
+		app, err := config.App(appName)
+		if err != nil {
+			err = fmt.Errorf("failed to get app %s: %w", appName, err)
+			errorList = append(errorList, err)
+		}
+
+		pathInfo, err := os.Stat(app.Path)
 
 		if errors.Is(err, os.ErrNotExist) {
 			err = fmt.Errorf("path to app %q does not exist (%s)", appName, app.Path)
@@ -46,7 +52,7 @@ func (config *QHConfig) HasRoot() bool {
 	return hasRoot
 }
 
-func (config *QHConfig) Resolve(path string) string {
+func (config *QHConfig) resolve(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
@@ -55,7 +61,30 @@ func (config *QHConfig) Resolve(path string) string {
 	return filepath.Join(root, path)
 }
 
-func (config *QHConfig) Expand(text string) string {
+func (config *QHConfig) App(appName string) (AppSetup, error) {
+	app, found := config.apps.Get(appName)
+	if !found {
+		return app, fmt.Errorf("app %q not found", appName)
+	}
+	app.Path = config.expandWithin(app.Path, app)
+	app.Path = config.resolve(app.Path)
+
+	for index, dir := range app.Include {
+		app.Include[index] = filepath.Join(app.Path, dir)
+	}
+
+	for varname, value := range app.Sets {
+		app.Sets[varname] = config.expand(value) 
+	}
+
+	if len(app.Include) == 0 {
+		app.Include = append(app.Include, app.Path)
+	}
+
+	return app, nil
+}
+
+func (config *QHConfig) expand(text string) string {
 	mapFunc := func(varname string) string {
 		return config.Vars[varname]
 	}
@@ -63,22 +92,48 @@ func (config *QHConfig) Expand(text string) string {
 	return os.Expand(text, mapFunc)
 }
 
-func (config *QHConfig) ExpandWithin(text string, app AppSetup) string {
+func (config *QHConfig) expandWithin(text string, app AppSetup) string {
 	mapFunc := func(varname string) string {
 		value, found := app.Sets[varname]
 		if !found {
 			return config.Vars[varname]
 		}
-		return config.Expand(value)
+		return config.expand(value)
 	}
 
 	return os.Expand(text, mapFunc)
 }
 
+func (config *QHConfig) AllRequired(appName string) ([]AppSetup, error) {
+	var requiredApps []AppSetup
+	
+	var appsToAdd []string
+	addedApps := map[string]bool{}
+
+	appsToAdd = append(appsToAdd, appName)
+
+	for _, depName := range appsToAdd {
+		_, alreadyAdded := addedApps[depName]
+		if alreadyAdded {
+			continue
+		}
+
+		dep, err := config.App(appName)
+		if err != nil {
+			return nil, err
+		}
+
+		requiredApps = append(requiredApps, dep)
+		addedApps[depName] = true
+	}
+
+	return requiredApps, nil
+}
+
 func (config *QHConfig) Packages() []string {
 	var packages []string
 
-	for _, app := range config.Apps {
+	for _, app := range config.apps {
 		if app.Package != "" {
 			packages = append(packages, app.Name)
 		}
@@ -87,14 +142,14 @@ func (config *QHConfig) Packages() []string {
 }
 
 func (config *QHConfig) IsInstalled(appName string) (bool, error) {
-	app, found := config.Apps.Get(appName)
-	if !found {
-		return false, fmt.Errorf("app %q not found", appName)
+	app, err := config.App(appName)
+	if err != nil {
+		return false, err
 	}
 
-	_, err := os.Stat(app.Path)
+	_, err = os.Stat(app.Path)
 	if err == nil {
-		return true, nil		
+		return true, nil
 	} else if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	} else {

@@ -12,7 +12,7 @@ type jsonConfig struct {
 func (jConfig *jsonConfig) ToConfig() *QHConfig {
 	var config QHConfig
 	config.Vars = jConfig.Vars
-	config.Apps = AppCatalog{}
+	config.apps = AppCatalog{}
 
 	for appName, appOrPath := range jConfig.Apps {
 		var app AppSetup
@@ -25,7 +25,7 @@ func (jConfig *jsonConfig) ToConfig() *QHConfig {
 		}
 
 		app.Name = appName
-		config.Apps.Add(app)
+		config.apps.Add(app)
 	}
 
 	return &config

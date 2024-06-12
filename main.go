@@ -119,11 +119,11 @@ func main() {
 		}
 
 	case "add":
-		apps, err := config.Apps.AllRequired(args[2])
+		apps, err := config.AllRequired(args[2])
 		if err != nil {
 			log.Fatalf("ERROR: failed to complete operation: %s", err)
 		}
-		if err := setupApps(config, &script, apps); err != nil {
+		if err := setupApps(&script, apps); err != nil {
 			log.Fatalf("ERROR: failed to complete operation: %s", err)
 		}
 
@@ -132,7 +132,7 @@ func main() {
 
 	case "install":
 		if err := installPackage(config, args[2]); err != nil {
-			script.Echo("ERROR:", err.Error())
+			log.Fatalln("ERROR:", err)
 		} else {
 			script.Echo(args[2], "installed")
 		}
@@ -175,15 +175,14 @@ func readConfiguration() (*config.QHConfig, error) {
 	return conf, err
 }
 
-func setupApps(config *config.QHConfig, script *Script, apps []config.AppSetup) error {
+func setupApps(script *Script, apps []config.AppSetup) error {
 	for _, app := range apps {
-		appPath := config.ExpandWithin(app.Path, app)
-		appPath = config.Resolve(appPath)
-
-		script.AddToPath(appPath)
+		for _, includePath := range app.Include {
+			script.AddToPath(includePath)
+		}
 
 		for varName, value := range app.Sets {
-			script.Set(varName, config.ExpandWithin(value, app))
+			script.Set(varName, value)
 		}
 	}
 	return nil
@@ -229,14 +228,14 @@ func listPackages(conf *config.QHConfig, script *Script) {
 }
 
 func installPackage(conf *config.QHConfig, packageName string) error {
-	app, found := conf.Apps.Get(packageName)
-	if !found {
-		return fmt.Errorf("unknown package %q", packageName)
+	app, err := conf.App(packageName)
+	if err != nil {
+		return err
 	}
 
 	if app.Package == "" {
 		return fmt.Errorf("the app %q has no package configured", app.Name)
 	}
 
-	return pack.Install(app.Package, conf.ExpandWithin(app.Path, app))
+	return pack.Install(app.Package, app.Path)
 }
